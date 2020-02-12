@@ -29,14 +29,6 @@
    --region {{ aws_region }}
   register: current_sftp_users
 
-- debug:
-    var: current_sftp_users.stdout|from_json
-
-- debug:
-    msg: "{{ (current_sftp_users.stdout|from_json)|json_query(sftp_user_query) | join(',') }}"
-  vars: 
-    sftp_user_query: "Users[?UserName=='{{ sftp_user_name }}'].UserName" 
-
 - name: Create SFTP server user
   command: >
     aws transfer create-user 
