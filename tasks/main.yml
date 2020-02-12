@@ -1,0 +1,51 @@
+# roles/aws-sftp/tasks/main.tml
+# Create SFTP users and dependencies
+# The SFTP service itself is created manually fom the AWS console due to lack of capabilities of the API
+---
+- name: Lookup KMS key info
+  aws_kms_info:
+    filters:
+      alias: "{{ s3_kms_key_name }}"
+  register: kms_key_info
+
+- name: Create IAM roles for SFTP user
+  iam_role:
+    name: "{{ sftp_user_role_name }}"
+    assume_role_policy_document: "{{ lookup('file','assume-role-policy.json') }}"
+    description: "{{ sftp_user_role_description }}"
+
+- name: Create and attach IAM role policy
+  iam_policy:
+    iam_type: role
+    iam_name: "{{ sftp_user_role_name }}"
+    policy_name: "{{ sftp_role_policy_name }}"
+    state: present
+    policy_json: "{{ lookup('template', 'role-policy.json.j2') }}"
+
+- name: Lookup exsitng SFTP server users
+  command: >
+   aws transfer list-users
+   --server-id {{ sftp_server_id }}
+   --region {{ aws_region }}
+  register: current_sftp_users
+
+- debug:
+    var: current_sftp_users.stdout|from_json
+
+- debug:
+    msg: "{{ (current_sftp_users.stdout|from_json)|json_query(sftp_user_query) | join(',') }}"
+  vars: 
+    sftp_user_query: "Users[?UserName=='{{ sftp_user_name }}'].UserName" 
+
+- name: Create SFTP server user
+  command: >
+    aws transfer create-user 
+    --user-name {{ sftp_user_name|quote }}
+    --home-directory /{{ s3_bucket_name|quote }}
+    --role arn:aws:iam::{{ aws_account_id }}:role/{{ sftp_user_role_name|quote }}
+    --server-id {{ sftp_server_id }}
+    --region {{ aws_region }}
+  when: (current_sftp_users.stdout|from_json)|json_query(sftp_user_query) | join(',') != sftp_user_name
+  vars: 
+    sftp_user_query: "Users[?UserName=='{{ sftp_user_name }}'].UserName"
+  
